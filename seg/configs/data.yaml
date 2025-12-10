@@ -1,0 +1,11 @@
+names:
+  0: pH
+path: /home/k/projects/pHue/seg
+train: /home/k/projects/pHue/seg/data/train.txt
+val: /home/k/projects/pHue/seg/data/val.txt
+
+loss:
+  box: 0.05 # 降低边界框损失权重
+  cls: 0.5
+  dfl: 1.5
+  seg: 1.0 # 保持分割损失权重
