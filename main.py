@@ -11,21 +11,26 @@ import numpy as np
 from pathlib import Path
 from ultralytics.models import YOLO
 
-# 定义 pH 值与颜色的映射
+# 定义 pH 值与颜色的映射 (BGR格式)
 pH_color_map = {
-    (255, 0, 0): 1,  # 红色
-    (255, 69, 0): 2,  # 橙红色
-    (255, 165, 0): 3,  # 橙色
-    (255, 255, 0): 4,  # 黄色
-    (124, 252, 0): 5,  # 黄绿色
-    (0, 255, 0): 6,  # 绿色
-    (0, 255, 255): 7,  # 蓝绿色
-    (0, 128, 255): 8,  # 蓝色
-    (0, 0, 255): 9,  # 紫色
-    (128, 0, 255): 10,  # 紫红色
-    (255, 0, 255): 11,  # 洋红色
-    (255, 0, 127): 12,  # 深洋红色
-    (255, 0, 64): 13,  # 深红色
+    (59.965, 63.320, 139.625): 0.05,
+    (64.992, 77.643, 144.421): 0.43,
+    (80.661, 120.070, 161.758): 0.51,
+    (60.278, 57.77, 142.64): 0.62,
+    (16.324, 18.633, 21.588): 1.08,
+    (61.606, 59.757, 153.166): 1.51,
+    (11.304, 14.994, 20.441): 2.12,
+    (14.424, 15.317, 16.536): 3.01,
+    (57.999, 115.845, 136.556): 4.76,
+    (49.692, 44.331, 40.268): 7.68,
+    (60.359, 55.670, 61.398): 9.56,
+    (59.753, 61.018, 58.980): 10.03,
+    (55.348, 46.265, 46.981): 10.29,
+    (73.945, 63.986, 57.020): 10.49,
+    (56.108, 64.799, 67.805): 10.97,
+    (52.627, 40.507, 37.052): 12.54,
+    (47.989, 36.261, 32.729): 13.00,
+    (50.290, 36.517, 36.408): 13.88,
 }
 
 
@@ -34,24 +39,77 @@ def ensure_dir(path):
     os.makedirs(path, exist_ok=True)
 
 
-def get_dominant_color(image):
-    """获取图像中的主导颜色"""
+def get_ph_value_from_patch(image):
+    """从pH试纸图像中获取pH值，通过颜色聚类获取最大的两种颜色，并取距离pH试纸较远的颜色匹配pH值"""
     # 确保输入图像是正确的格式
     if isinstance(image, np.ndarray):
         pixels = image.reshape(-1, 3).astype(np.float32)
     else:
         pixels = np.array(image).reshape(-1, 3).astype(np.float32)
-    n_colors = 1
+
+    # 使用k-means聚类将像素分为2类（变色部分和未变色部分）
+    n_colors = 2
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 200, 0.1)
     flags = cv2.KMEANS_RANDOM_CENTERS
-    best_labels = np.zeros((pixels.shape[0],), dtype=np.int32)
-    # 创建一个空的标签数组
     labels = np.zeros((pixels.shape[0],), dtype=np.int32)
-    # 执行 k-means 聚类
     _, labels, palette = cv2.kmeans(pixels, n_colors, labels, criteria, 10, flags)
-    _, counts = np.unique(labels, return_counts=True)
-    dominant = palette[np.argmax(counts)]
-    return tuple(dominant.astype(int))
+
+    # 计算每个聚类的像素数量
+    unique_labels, counts = np.unique(labels, return_counts=True)
+
+    # 找到最大的两个聚类（按像素数量排序）
+    sorted_indices = np.argsort(counts)[::-1]
+    largest_cluster_idx = sorted_indices[0]
+    second_largest_cluster_idx = (
+        sorted_indices[1] if len(sorted_indices) > 1 else largest_cluster_idx
+    )
+
+    # 获取两个主要颜色
+    main_color = palette[largest_cluster_idx]
+    secondary_color = palette[second_largest_cluster_idx]
+    print(f"  主要颜色: {main_color}")
+    print(f"  次主要颜色: {secondary_color}")
+
+    # 假设未变色的部分通常是白色或浅色，计算与白色的欧几里得距离
+    white = np.array([255, 255, 255], dtype=np.float32)
+    main_color_distance_to_white = np.sqrt(np.sum((main_color - white) ** 2))
+    secondary_color_distance_to_white = np.sqrt(np.sum((secondary_color - white) ** 2))
+
+    # 选择距离白色更远的颜色（即变色更明显的部分）
+    if main_color_distance_to_white > secondary_color_distance_to_white:
+        selected_color = main_color
+    else:
+        selected_color = secondary_color
+    print(f"  匹配颜色: {selected_color}")
+    print(
+        f" print for copy:\n ({selected_color[0]:.3f},{selected_color[1]:.3f},{selected_color[2]:.3f}):"
+    )
+
+    # 计算与所有已知颜色的距离
+    color_distances = []
+    for color, pH in pH_color_map.items():
+        # 计算欧几里得距离
+        distance = np.sqrt(sum((c - d) ** 2 for c, d in zip(selected_color, color)))
+        color_distances.append((distance, pH))
+
+    # 按距离排序并取最近的两个
+    color_distances.sort()
+    closest_two = color_distances[:2]
+
+    # 计算加权平均 pH 值 (权重为距离的倒数)
+    if len(closest_two) == 2:
+        dist1, pH1 = closest_two[0]
+        dist2, pH2 = closest_two[1]
+        # 使用距离的倒数作为权重
+        weight1 = 1.0 / (dist1 + 1e-8)  # 添加小常数避免除零
+        weight2 = 1.0 / (dist2 + 1e-8)
+        pH_value = (weight1 * pH1 + weight2 * pH2) / (weight1 + weight2)
+    elif len(closest_two) == 1:
+        pH_value = closest_two[0][1]  # 只有一个匹配
+    else:
+        pH_value = "未知"  # 没有匹配
+
+    return pH_value
 
 
 def load_model(model_path):
@@ -123,40 +181,42 @@ def process_image(
             overlay_path = os.path.join(output_dir, f"{stem}_overlay_{i}.jpg")
             cv2.imwrite(overlay_path, overlay)
 
-            # 也可以裁剪出掩码区域（边界框内）
-            x1, y1, x2, y2 = map(int, box)
-            cropped = img[y1:y2, x1:x2]
-            if cropped.size > 0:
-                crop_path = os.path.join(output_dir, f"{stem}_crop_{i}.jpg")
-                cv2.imwrite(crop_path, cropped)
+            # 将掩码调整到原始图像尺寸
+            mask_resized = cv2.resize(
+                mask, (orig_w, orig_h), interpolation=cv2.INTER_NEAREST
+            )
 
-            # 获取掩码区域的主导颜色
-            dominant_color = get_dominant_color(cropped)
-            # 计算与所有已知颜色的距离
-            color_distances = []
-            for color, pH in pH_color_map.items():
-                # 计算欧几里得距离
-                distance = np.sqrt(
-                    sum((c - d) ** 2 for c, d in zip(dominant_color, color))
-                )
-                color_distances.append((distance, pH))
+            # 提取非零区域的边界框以进行精确裁剪
+            coords = cv2.findNonZero((mask_resized > 0.5).astype(np.uint8))
+            if coords is not None:
+                x, y, w, h = cv2.boundingRect(coords)
 
-            # 按距离排序并取最近的两个
-            color_distances.sort()
-            closest_two = color_distances[:2]
+                # 裁剪原始图像和掩码到边界框区域
+                cropped_img = img[y : y + h, x : x + w]
+                cropped_mask = mask_resized[y : y + h, x : x + w]
 
-            # 计算加权平均 pH 值 (权重为距离的倒数)
-            if len(closest_two) == 2:
-                dist1, pH1 = closest_two[0]
-                dist2, pH2 = closest_two[1]
-                # 使用距离的倒数作为权重
-                weight1 = 1.0 / (dist1 + 1e-8)  # 添加小常数避免除零
-                weight2 = 1.0 / (dist2 + 1e-8)
-                pH_value = (weight1 * pH1 + weight2 * pH2) / (weight1 + weight2)
-            elif len(closest_two) == 1:
-                pH_value = closest_two[0][1]  # 只有一个匹配
+                # 创建一个与裁剪后图像大小相同的BGRA图像
+                cropped_bgra = np.zeros((h, w, 4), dtype=np.uint8)
+                cropped_bgra[:, :, :3] = cropped_img  # 复制裁剪后的BGR图像
+                cropped_bgra[:, :, 3] = (cropped_mask > 0.5) * 255  # 设置Alpha通道
+
+                # 保存裁剪后的PNG图像（保留透明度）
+                mask_area_path = os.path.join(output_dir, f"{stem}_mask_area_{i}.png")
+                cv2.imwrite(mask_area_path, cropped_bgra)
+
+                # 从裁剪后的图像中提取非透明像素用于聚类
+                alpha_channel = cropped_bgra[:, :, 3]
+                non_transparent_pixels = cropped_bgra[
+                    alpha_channel > 0, :3
+                ]  # 只取BGR通道
+
+                # 获取pH值，使用非透明像素进行颜色聚类
+                pH_value = get_ph_value_from_patch(non_transparent_pixels)
             else:
-                pH_value = "未知"  # 没有匹配
+                pH_value = "未知"
+                print(
+                    f"    对象 {i}: 类别 {int(cls)}, 置信度 {conf:.2f}, 掩码已保存, pH 值: {pH_value} (无有效掩码区域)"
+                )
             print(
                 f"    对象 {i}: 类别 {int(cls)}, 置信度 {conf:.2f}, 掩码已保存, pH 值: {pH_value}"
             )
