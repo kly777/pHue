@@ -1,48 +1,98 @@
 """
-模块4: 利用被还原的变色部分的颜色, 匹配最佳的样板,得到pH值。
+模块4: 利用被还原的变色部分的颜色, 使用神经网络模型预测pH值。
 """
 
+import torch
+import torch.nn as nn
 import numpy as np
+from pHmap import pH_color_map
 
+# 定义神经网络模型结构
+class pHNet(nn.Module):
+    """
+    神经网络模型，用于拟合颜色(BGR)到pH值的映射关系
+    输入: B, G, R 三个通道的颜色值
+    输出: 对应的pH值
+    """
+    def __init__(self, input_size=3, hidden_sizes=[64, 32, 16], output_size=1):
+        super(pHNet, self).__init__()
+        
+        # 创建网络层
+        layers = []
+        prev_size = input_size
+        
+        for hidden_size in hidden_sizes:
+            layers.append(nn.Linear(prev_size, hidden_size))
+            layers.append(nn.ReLU())
+            layers.append(nn.Dropout(0.1))  # 添加dropout防止过拟合
+            prev_size = hidden_size
+        
+        # 输出层
+        layers.append(nn.Linear(prev_size, output_size))
+        
+        self.network = nn.Sequential(*layers)
+    
+    def forward(self, x):
+        return self.network(x)
+
+def load_model(model_path="best_ph_model.pth"):
+    """加载训练好的模型"""
+    # 由于PyTorch 2.6+默认启用weights_only=True，需要设置为False来兼容旧的保存格式
+    checkpoint = torch.load(model_path, weights_only=False)
+    model = pHNet(
+        input_size=checkpoint["config"]["input_size"],
+        hidden_sizes=checkpoint["config"]["hidden_sizes"],
+        output_size=checkpoint["config"]["output_size"],
+    )
+    model.load_state_dict(checkpoint["model_state_dict"])
+    
+    return model, checkpoint["stats"]
+
+def predict_ph(color, model=None, stats=None):
+    """
+    使用训练好的模型预测pH值
+
+    Args:
+        color (tuple): BGR颜色值 (B, G, R)
+        model: 训练好的模型
+        stats: 数据统计信息 (均值和标准差)
+
+    Returns:
+        float: 预测的pH值
+    """
+    if model is None or stats is None:
+        model, stats = load_model()
+    
+    model.eval()
+    
+    # 解包统计信息
+    X_mean, X_std, y_mean, y_std = stats
+    
+    # 转换输入数据
+    color_array = np.array(color, dtype=np.float32).reshape(1, -1)
+    color_normalized = (color_array - X_mean) / X_std
+    
+    # 转换为tensor
+    color_tensor = torch.from_numpy(color_normalized)
+    
+    # 预测
+    with torch.no_grad():
+        pred_normalized = model(color_tensor)
+        pred = pred_normalized.item() * y_std + y_mean
+    
+    return pred
 
 def calculate_ph_value(corrected_colored_color):
     """
-    使用校正后的变色部分颜色，在pH_color_map中进行匹配，计算最终的pH值。
+    使用训练好的神经网络模型，根据校正后的变色部分颜色预测pH值。
 
     Args:
         corrected_colored_color (tuple): 校正后的变色部分颜色 (B, G, R)
 
     Returns:
-        float or str: 计算出的pH值，或"未知"
+        float: 预测的pH值
     """
-    from pHmap import pH_color_map
-
-    # 将输入转换为numpy数组
-    sample_color = np.array(corrected_colored_color, dtype=np.float32)
-
-    # --- 计算pH值 ---
-    # 使用校正后的样本颜色与pH_color_map进行匹配
-    color_distances = []
-    for color_change, pH in pH_color_map.items():
-        # 注意：我们现在只关心变色部分的颜色
-        distance = np.linalg.norm(sample_color - color_change)
-        color_distances.append((distance, pH))
-
-    # 按距离排序并取最近的两个
-    color_distances.sort()
-    closest_two = color_distances[:2]
-
-    # 计算加权平均 pH 值 (权重为距离的倒数)
-    if len(closest_two) == 2:
-        dist1, pH1 = closest_two[0]
-        dist2, pH2 = closest_two[1]
-        epsilon = 1e-8
-        weight1 = 1.0 / (dist1 + epsilon)
-        weight2 = 1.0 / (dist2 + epsilon)
-        pH_value = (weight1 * pH1 + weight2 * pH2) / (weight1 + weight2)
-    elif len(closest_two) == 1:
-        pH_value = closest_two[0][1]
-    else:
-        pH_value = "未知"
-
-    return pH_value
+    # 直接使用神经网络模型进行预测
+    predicted_ph = predict_ph(corrected_colored_color)
+    
+    return predicted_ph
