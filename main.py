@@ -14,6 +14,35 @@ from ultralytics.models import YOLO
 
 from pHmap import pH_color_map
 
+import tkinter as tk
+
+
+def show_color_window(color):
+    """
+    创建窗口显示指定颜色
+    :param color: RGB元组 (BGR格式需转换)
+    """
+    # 转换BGR到RGB（OpenCV使用BGR，tkinter使用RGB）
+    r, g, b = int(color[2]), int(color[1]), int(color[0])
+    hex_color = f"#{r:02x}{g:02x}{b:02x}"
+
+    root = tk.Tk()
+    root.title("pH匹配颜色预览")
+    root.geometry("300x200")
+
+    # 颜色显示区域
+    color_frame = tk.Frame(root, width=250, height=120, bg=hex_color)
+    color_frame.pack(pady=15)
+
+    # 颜色值标签
+    tk.Label(
+        root, text=f"RGB: ({r}, {g}, {b})\nHEX: {hex_color}", font=("Arial", 12)
+    ).pack()
+
+    # 关闭按钮
+    tk.Button(root, text="确认", command=root.destroy).pack(pady=5)
+    root.mainloop()
+
 
 def ensure_dir(path):
     """确保目录存在"""
@@ -62,6 +91,9 @@ def get_ph_value_from_patch(image):
     else:
         selected_color = secondary_color
     print(f"  匹配颜色: {selected_color}")
+
+    show_color_window(selected_color)
+
     print(
         f" print for copy:\n ({selected_color[0]:.3f},{selected_color[1]:.3f},{selected_color[2]:.3f}):"
     )
