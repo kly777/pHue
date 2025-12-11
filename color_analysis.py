@@ -1,5 +1,5 @@
 """
-模块2 & 3: 从mask图像中聚类, 获取两个颜色值, 并区分哪个是变色部分, 哪个是未变色部分。
+模块2 & 3: 从mask图像中聚类, 获取两个HSV颜色值, 并区分哪个是变色部分, 哪个是未变色部分。
 """
 
 import numpy as np
@@ -14,7 +14,7 @@ def extract_colors_from_patch(image):
         image: 包含透明背景的BGR图像 (np.ndarray with shape (H, W, 4))
 
     Returns:
-        tuple: (变色部分颜色, 未变色部分颜色) 的BGR元组，如果失败则返回(None, None)
+        tuple: (变色部分颜色, 未变色部分颜色) 的HSV元组，如果失败则返回(None, None)
     """
     # 确保输入图像是正确的格式
     if not isinstance(image, np.ndarray) or image.shape[2] != 4:
@@ -54,13 +54,26 @@ def extract_colors_from_patch(image):
 
     # --- 区分变色和未变色部分 ---
     # 使用一个固定的理想参考色进行环境光校正
-    IDEAL_REFERENCE_BGR = np.array(
-        [105.971, 184.178, 214.027], dtype=np.float32
-    )  # 固定的理想白板BGR值
+    # 将理想参考色转换为HSV进行比较
+    reference_bgr = np.array([105.971, 184.178, 214.027], dtype=np.float32)
+    reference_hsv = cv2.cvtColor(
+        np.array([[reference_bgr]], dtype=np.float32) / 255.0, cv2.COLOR_BGR2HSV
+    )[0][0]
+    reference_hsv[0] *= 2  # Hue从[0,180]转换到[0,360]
 
-    # 计算两个聚类颜色与固定理想参考色的距离
-    diff1 = np.linalg.norm(cluster1_color - IDEAL_REFERENCE_BGR)
-    diff2 = np.linalg.norm(cluster2_color - IDEAL_REFERENCE_BGR)
+    # 将聚类颜色转换为HSV
+    cluster1_hsv = cv2.cvtColor(
+        np.array([[cluster1_color]], dtype=np.float32) / 255.0, cv2.COLOR_BGR2HSV
+    )[0][0]
+    cluster1_hsv[0] *= 2  # Hue从[0,180]转换到[0,360]
+    cluster2_hsv = cv2.cvtColor(
+        np.array([[cluster2_color]], dtype=np.float32) / 255.0, cv2.COLOR_BGR2HSV
+    )[0][0]
+    cluster2_hsv[0] *= 2  # Hue从[0,180]转换到[0,360]
+
+    # 计算两个聚类颜色与固定理想参考色的HSV距离
+    diff1 = np.linalg.norm(cluster1_hsv - reference_hsv)
+    diff2 = np.linalg.norm(cluster2_hsv - reference_hsv)
 
     # 距离更近的聚类被认为是“未变色”的参考区域
     if diff1 < diff2:
@@ -70,8 +83,23 @@ def extract_colors_from_patch(image):
         uncolored_color = cluster2_color
         colored_color = cluster1_color
 
-    print(f"识别结果:")
-    print(f"  变色部分颜色: {colored_color}")
-    print(f"  未变色部分颜色: {uncolored_color}")
+    # 将BGR颜色转换为HSV格式
+    colored_bgr = np.array([[colored_color]], dtype=np.float32) / 255.0
+    uncolored_bgr = np.array([[uncolored_color]], dtype=np.float32) / 255.0
 
-    return tuple(colored_color.astype(int)), tuple(uncolored_color.astype(int))
+    colored_hsv = cv2.cvtColor(colored_bgr, cv2.COLOR_BGR2HSV)[0][0]
+    uncolored_hsv = cv2.cvtColor(uncolored_bgr, cv2.COLOR_BGR2HSV)[0][0]
+
+    # 调整Hue到[0,360]范围
+    # colored_hsv[0] *= 2
+    # uncolored_hsv[0] *= 2
+
+    # 四舍五入到3位小数
+    colored_hsv = tuple(round(float(x), 3) for x in colored_hsv)
+    uncolored_hsv = tuple(round(float(x), 3) for x in uncolored_hsv)
+
+    # print(f"识别结果:")
+    # print(f"  变色部分颜色(HSV): {colored_hsv}")
+    # print(f"  未变色部分颜色(HSV): {uncolored_hsv}")
+
+    return colored_hsv, uncolored_hsv

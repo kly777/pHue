@@ -92,9 +92,9 @@ def train_model():
     optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
 
     # 训练参数
-    epochs = 1000
+    epochs = 10000
     best_loss = float("inf")
-    patience = 50
+    patience = 500
     patience_counter = 0
 
     print("开始训练神经网络模型...")

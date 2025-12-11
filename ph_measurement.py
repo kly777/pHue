@@ -21,6 +21,6 @@ def calculate_ph_value(corrected_colored_color):
     """
 
     # 使用神经网络模型进行预测，直接传入BGR颜色和color_space参数
-    predicted_ph = predict_ph(corrected_colored_color, color_space="bgr")
+    predicted_ph = predict_ph(corrected_colored_color)
 
     return predicted_ph
