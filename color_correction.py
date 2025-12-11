@@ -21,18 +21,14 @@ def correct_color_by_reference(colored_color, uncolored_color):
     uncolored = np.array(uncolored_color, dtype=np.float32)
 
     # --- 环境光校正 ---
-    # 方法：计算pH_color_map中所有“未变色”部分的颜色的平均值，作为理想参考。
-    from pHmap import pH_color_map
-
-    # 提取pH_color_map中所有“未变色”部分的颜色并计算其平均值
-    reference_colors = np.array(
-        [color_ref for color_change, color_ref in pH_color_map.keys()]
-    )
-    ideal_reference_bgr = np.mean(reference_colors, axis=0).astype(np.float32)
+    # 使用一个固定的理想参考色进行环境光校正
+    IDEAL_REFERENCE_BGR = np.array(
+        [105.971, 184.178, 214.027], dtype=np.float32
+    )  # 固定的理想白板BGR值
 
     # 计算增益因子 (Gain Factor) 进行校正
     epsilon = 1e-8
-    gain_factor = (ideal_reference_bgr + epsilon) / (uncolored + epsilon)
+    gain_factor = (IDEAL_REFERENCE_BGR + epsilon) / (uncolored + epsilon)
 
     # 对样本颜色应用增益校正
     corrected_colored = np.clip(colored * gain_factor, 0, 255).astype(np.float32)
@@ -40,7 +36,7 @@ def correct_color_by_reference(colored_color, uncolored_color):
     print(f"校正结果:")
     print(f"  原始变色颜色: {colored}")
     print(f"  实际未变色颜色: {uncolored}")
-    print(f"  理想参考颜色: {ideal_reference_bgr}")
+    print(f"  理想参考颜色: {[105.971, 184.178, 214.027]}")
     print(f"  校正后变色颜色: {corrected_colored}")
 
     return tuple(corrected_colored.astype(int))

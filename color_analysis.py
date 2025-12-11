@@ -53,18 +53,14 @@ def extract_colors_from_patch(image):
     cluster2_color = palette[second_largest_cluster_idx]
 
     # --- 区分变色和未变色部分 ---
-    # 方法：计算pH_color_map中所有“未变色”部分的颜色的平均值，作为动态的理想参考。
-    from pHmap import pH_color_map
+    # 使用一个固定的理想参考色进行环境光校正
+    IDEAL_REFERENCE_BGR = np.array(
+        [105.971, 184.178, 214.027], dtype=np.float32
+    )  # 固定的理想白板BGR值
 
-    # 提取pH_color_map中所有“未变色”部分的颜色并计算其平均值
-    reference_colors = np.array(
-        [color_ref for color_change, color_ref in pH_color_map.keys()]
-    )
-    ideal_reference_bgr = np.mean(reference_colors, axis=0).astype(np.float32)
-
-    # 计算两个聚类颜色与动态理想参考色的距离
-    diff1 = np.linalg.norm(cluster1_color - ideal_reference_bgr)
-    diff2 = np.linalg.norm(cluster2_color - ideal_reference_bgr)
+    # 计算两个聚类颜色与固定理想参考色的距离
+    diff1 = np.linalg.norm(cluster1_color - IDEAL_REFERENCE_BGR)
+    diff2 = np.linalg.norm(cluster2_color - IDEAL_REFERENCE_BGR)
 
     # 距离更近的聚类被认为是“未变色”的参考区域
     if diff1 < diff2:

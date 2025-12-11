@@ -23,7 +23,7 @@ def calculate_ph_value(corrected_colored_color):
     # --- 计算pH值 ---
     # 使用校正后的样本颜色与pH_color_map进行匹配
     color_distances = []
-    for (color_change, color_ref), pH in pH_color_map.items():
+    for color_change, pH in pH_color_map.items():
         # 注意：我们现在只关心变色部分的颜色
         distance = np.linalg.norm(sample_color - color_change)
         color_distances.append((distance, pH))
