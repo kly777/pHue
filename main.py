@@ -75,6 +75,7 @@ def main():
                 colored_color, uncolored_color = extract_colors_from_patch(
                     obj["cropped_bgra"]
                 )
+                corrected_colored_color = (0.0, 0.0, 0.0)
                 if colored_color is not None and uncolored_color is not None:
                     corrected_colored_color = correct_color_by_reference(
                         colored_color, uncolored_color
@@ -86,6 +87,10 @@ def main():
                 print(
                     f"对象 {obj['stem']}: 类别 {int(obj['cls'])}, 置信度 {obj['conf']:.2f}, pH 值: {pH_value}"
                 )
+                # if "." in obj["stem"]:
+                #     print(
+                #         f"({corrected_colored_color[0]}, {corrected_colored_color[1]}, {corrected_colored_color[2]}) :{obj['stem']},"
+                #     )
     else:
         print(f"输入路径不存在: {args.input}")
         return
