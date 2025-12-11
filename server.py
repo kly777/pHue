@@ -25,9 +25,16 @@ model = YOLO(MODEL_PATH)
 CONF_THRESHOLD = 0.5
 
 
+# 导入新模块
+from segmentation import segment_image
+from color_analysis import extract_colors_from_patch
+from color_correction import correct_color_by_reference
+from ph_measurement import calculate_ph_value
+
+
 def process_frame(frame: np.ndarray, device_id: str) -> dict:
     """
-    使用 YOLO 分割模型处理帧
+    使用 YOLO 分割模型处理帧，并计算pH值
     返回格式: {
         "objects": [
             {
@@ -37,7 +44,7 @@ def process_frame(frame: np.ndarray, device_id: str) -> dict:
                 "y": float,  # 归一化中心点y
                 "width": float,  # 归一化宽度
                 "height": float,  # 归一化高度
-                "mask_polygons": List[List[float]]  # 可选，掩码多边形坐标 (归一化)
+                "ph_value": float  # 预测的pH值
             },
             ...
         ],
@@ -49,61 +56,64 @@ def process_frame(frame: np.ndarray, device_id: str) -> dict:
         }
     }
     """
-    height, width = frame.shape[:2]
+    # 使用segment_image函数处理帧
+    from pathlib import Path
+    import tempfile
 
-    # 运行推理
-    results = model(frame, conf=CONF_THRESHOLD, verbose=False)
+    # 创建临时文件来保存帧
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_file:
+        temp_path = tmp_file.name
+        cv2.imwrite(temp_path, frame)
 
-    objects = []
-    if results[0].masks is not None:
-        masks = results[0].masks.data.cpu().numpy()  # (N, H, W)
-        boxes = results[0].boxes.xyxy.cpu().numpy() if results[0].boxes else []
-        classes = results[0].boxes.cls.cpu().numpy() if results[0].boxes else []
-        confs = results[0].boxes.conf.cpu().numpy() if results[0].boxes else []
+    try:
+        # 处理图像
+        img_path = Path(temp_path)
+        detected_objects = []
 
-        for i, (mask, box, cls, conf) in enumerate(zip(masks, boxes, classes, confs)):
-            # 边界框归一化坐标 (x_center, y_center, width, height)
-            x1, y1, x2, y2 = box
+        for obj in segment_image(model, img_path, CONF_THRESHOLD):
+            # 提取颜色
+            colored_color, uncolored_color = extract_colors_from_patch(
+                obj["cropped_bgra"]
+            )
+
+            # 计算pH值
+            pH_value = "未知"
+            if colored_color is not None and uncolored_color is not None:
+                corrected_colored_color = correct_color_by_reference(
+                    colored_color, uncolored_color
+                )
+                pH_value = calculate_ph_value(corrected_colored_color)
+
+            # 获取边界框信息
+            x1, y1, x2, y2 = obj["box"]
+            width, height = frame.shape[1], frame.shape[0]
+
+            # 归一化边界框坐标
             x_center = ((x1 + x2) / 2) / width
             y_center = ((y1 + y2) / 2) / height
             bbox_width = (x2 - x1) / width
             bbox_height = (y2 - y1) / height
 
-            # 获取掩码多边形 (可选)
-            # 将掩码调整到原始尺寸并提取轮廓
-            mask_resized = cv2.resize(
-                mask, (width, height), interpolation=cv2.INTER_NEAREST
-            )
-            contours, _ = cv2.findContours(
-                (mask_resized > 0.5).astype(np.uint8),
-                cv2.RETR_EXTERNAL,
-                cv2.CHAIN_APPROX_SIMPLE,
-            )
-            polygons = []
-            for contour in contours:
-                # 简化多边形，减少点数
-                epsilon = 0.01 * cv2.arcLength(contour, True)
-                approx = cv2.approxPolyDP(contour, epsilon, True)
-                # 归一化坐标
-                normalized = approx.squeeze(1).astype(float)
-                if len(normalized) > 0:
-                    normalized[:, 0] /= width
-                    normalized[:, 1] /= height
-                    polygons.append(normalized.tolist())
-
-            objects.append(
+            # 添加到结果中
+            detected_objects.append(
                 {
-                    "label": model.names[int(cls)]
-                    if int(cls) in model.names
-                    else str(int(cls)),
-                    "confidence": float(conf),
+                    "label": model.names[int(obj["cls"])]
+                    if int(obj["cls"]) in model.names
+                    else str(int(obj["cls"])),
+                    "confidence": float(obj["conf"]),
                     "x": float(x_center),
                     "y": float(y_center),
                     "width": float(bbox_width),
                     "height": float(bbox_height),
-                    "mask_polygons": polygons if polygons else None,
+                    "ph_value": pH_value,
                 }
             )
+    finally:
+        # 清理临时文件
+        if Path(temp_path).exists():
+            Path(temp_path).unlink()
+
+    objects = detected_objects
 
     return {
         "objects": objects,
@@ -157,6 +167,9 @@ def process_frame_data(
 
         if frame is None or frame.size == 0:
             return None
+
+        # 获取帧尺寸
+        height, width = frame.shape[:2]
 
         # 2. 处理帧 (调用AI模型)
         start_time = time.time()
