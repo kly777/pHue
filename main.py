@@ -11,10 +11,47 @@ import numpy as np
 from pathlib import Path
 from ultralytics.models import YOLO
 
+# 定义 pH 值与颜色的映射
+pH_color_map = {
+    (255, 0, 0): 1,  # 红色
+    (255, 69, 0): 2,  # 橙红色
+    (255, 165, 0): 3,  # 橙色
+    (255, 255, 0): 4,  # 黄色
+    (124, 252, 0): 5,  # 黄绿色
+    (0, 255, 0): 6,  # 绿色
+    (0, 255, 255): 7,  # 蓝绿色
+    (0, 128, 255): 8,  # 蓝色
+    (0, 0, 255): 9,  # 紫色
+    (128, 0, 255): 10,  # 紫红色
+    (255, 0, 255): 11,  # 洋红色
+    (255, 0, 127): 12,  # 深洋红色
+    (255, 0, 64): 13,  # 深红色
+}
+
 
 def ensure_dir(path):
     """确保目录存在"""
     os.makedirs(path, exist_ok=True)
+
+
+def get_dominant_color(image):
+    """获取图像中的主导颜色"""
+    # 确保输入图像是正确的格式
+    if isinstance(image, np.ndarray):
+        pixels = image.reshape(-1, 3).astype(np.float32)
+    else:
+        pixels = np.array(image).reshape(-1, 3).astype(np.float32)
+    n_colors = 1
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 200, 0.1)
+    flags = cv2.KMEANS_RANDOM_CENTERS
+    best_labels = np.zeros((pixels.shape[0],), dtype=np.int32)
+    # 创建一个空的标签数组
+    labels = np.zeros((pixels.shape[0],), dtype=np.int32)
+    # 执行 k-means 聚类
+    _, labels, palette = cv2.kmeans(pixels, n_colors, labels, criteria, 10, flags)
+    _, counts = np.unique(labels, return_counts=True)
+    dominant = palette[np.argmax(counts)]
+    return tuple(dominant.astype(int))
 
 
 def load_model(model_path):
@@ -93,7 +130,36 @@ def process_image(
                 crop_path = os.path.join(output_dir, f"{stem}_crop_{i}.jpg")
                 cv2.imwrite(crop_path, cropped)
 
-            print(f"    对象 {i}: 类别 {int(cls)}, 置信度 {conf:.2f}, 掩码已保存")
+            # 获取掩码区域的主导颜色
+            dominant_color = get_dominant_color(cropped)
+            # 计算与所有已知颜色的距离
+            color_distances = []
+            for color, pH in pH_color_map.items():
+                # 计算欧几里得距离
+                distance = np.sqrt(
+                    sum((c - d) ** 2 for c, d in zip(dominant_color, color))
+                )
+                color_distances.append((distance, pH))
+
+            # 按距离排序并取最近的两个
+            color_distances.sort()
+            closest_two = color_distances[:2]
+
+            # 计算加权平均 pH 值 (权重为距离的倒数)
+            if len(closest_two) == 2:
+                dist1, pH1 = closest_two[0]
+                dist2, pH2 = closest_two[1]
+                # 使用距离的倒数作为权重
+                weight1 = 1.0 / (dist1 + 1e-8)  # 添加小常数避免除零
+                weight2 = 1.0 / (dist2 + 1e-8)
+                pH_value = (weight1 * pH1 + weight2 * pH2) / (weight1 + weight2)
+            elif len(closest_two) == 1:
+                pH_value = closest_two[0][1]  # 只有一个匹配
+            else:
+                pH_value = "未知"  # 没有匹配
+            print(
+                f"    对象 {i}: 类别 {int(cls)}, 置信度 {conf:.2f}, 掩码已保存, pH 值: {pH_value}"
+            )
 
     # 如果没有检测到任何对象
     if results[0].masks is None:
