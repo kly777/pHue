@@ -154,6 +154,17 @@ def load_model(model_path="best_ph_model.pth"):
     return model, checkpoint["stats"]
 
 
+# 全局缓存模型和统计信息
+_cached_model = None
+_cached_stats = None
+
+def get_cached_model():
+    """获取缓存的模型和统计信息，如果未缓存则加载"""
+    global _cached_model, _cached_stats
+    if _cached_model is None or _cached_stats is None:
+        _cached_model, _cached_stats = load_model()
+    return _cached_model, _cached_stats
+
 def predict_ph(color, color_space="hsv", model=None, stats=None):
     """
     使用训练好的模型预测pH值
@@ -168,7 +179,7 @@ def predict_ph(color, color_space="hsv", model=None, stats=None):
         float: 预测的pH值
     """
     if model is None or stats is None:
-        model, stats = load_model()
+        model, stats = get_cached_model()
 
     model.eval()
     X_mean, X_std, y_mean, y_std = stats

@@ -17,13 +17,13 @@ def load_model(model_path):
     return model
 
 
-def segment_image(model, image_path, conf_threshold=0.5):
+def segment_image(model, image_input, conf_threshold=0.5):
     """
     对单张图像进行分割，返回所有检测到的掩码区域及其信息。
 
     Args:
         model: 加载的YOLO模型
-        image_path: 图像路径
+        image_input: 图像路径 (str/Path) 或 numpy 数组 (BGR格式)
         conf_threshold: 置信度阈值
 
     Returns:
@@ -33,17 +33,28 @@ def segment_image(model, image_path, conf_threshold=0.5):
             'box': 边界框坐标 [x1, y1, x2, y2]
             'cls': 类别
             'conf': 置信度
-            'stem': 文件名基础
+            'stem': 文件名基础 (如果是文件路径) 或空字符串
     """
-    img = cv2.imread(str(image_path))
-    if img is None:
-        print(f"无法读取图像: {image_path}")
+    if isinstance(image_input, (str, Path)):
+        img = cv2.imread(str(image_input))
+        if img is None:
+            print(f"无法读取图像: {image_input}")
+            return
+        stem = Path(image_input).stem
+    elif isinstance(image_input, np.ndarray):
+        img = image_input
+        stem = ""
+    else:
+        raise TypeError("image_input 必须是路径字符串、Path对象或numpy数组")
+
+    if img.size == 0:
+        print("图像为空")
         return
 
     # 推理
     results = model(img, conf=conf_threshold, verbose=False)
     if results[0].masks is None:
-        print(f"未检测到分割对象: {image_path}")
+        print(f"未检测到分割对象: {image_input if isinstance(image_input, (str, Path)) else 'numpy array'}")
         return
 
     # 获取原始图像尺寸
@@ -52,8 +63,6 @@ def segment_image(model, image_path, conf_threshold=0.5):
     boxes = results[0].boxes.xyxy.cpu().numpy() if results[0].boxes else []
     classes = results[0].boxes.cls.cpu().numpy() if results[0].boxes else []
     confs = results[0].boxes.conf.cpu().numpy() if results[0].boxes else []
-
-    stem = Path(image_path).stem
 
     for mask, box, cls, conf in zip(masks, boxes, classes, confs):
         # 将掩码调整到原始图像尺寸

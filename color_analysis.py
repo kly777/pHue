@@ -5,6 +5,13 @@
 import numpy as np
 import cv2
 
+# 预计算参考HSV颜色（固定理想参考色）
+_REFERENCE_BGR = np.array([105.971, 184.178, 214.027], dtype=np.float32)
+_REFERENCE_HSV = cv2.cvtColor(
+    np.array([[_REFERENCE_BGR]], dtype=np.float32) / 255.0, cv2.COLOR_BGR2HSV
+)[0][0]
+_REFERENCE_HSV[0] *= 2  # Hue从[0,180]转换到[0,360]
+
 
 def extract_colors_from_patch(image):
     """
@@ -29,13 +36,21 @@ def extract_colors_from_patch(image):
         print("没有找到非透明像素")
         return None, None
 
+    # 下采样：如果像素过多，随机采样最多1000个像素
+    max_pixels = 1000
+    if len(non_transparent_pixels) > max_pixels:
+        indices = np.random.choice(len(non_transparent_pixels), max_pixels, replace=False)
+        sample_pixels = non_transparent_pixels[indices]
+    else:
+        sample_pixels = non_transparent_pixels
+
     # 使用k-means聚类将像素分为2类（变色部分和未变色部分）
     n_colors = 2
-    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 200, 0.1)
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 0.2)  # 减少迭代，增加epsilon
     flags = cv2.KMEANS_RANDOM_CENTERS
-    labels = np.zeros((non_transparent_pixels.shape[0],), dtype=np.int32)
+    labels = np.zeros((sample_pixels.shape[0],), dtype=np.int32)
     _, labels, palette = cv2.kmeans(
-        non_transparent_pixels, n_colors, labels, criteria, 10, flags
+        sample_pixels, n_colors, labels, criteria, 5, flags  # 减少尝试次数
     )
 
     # 计算每个聚类的像素数量
@@ -53,13 +68,8 @@ def extract_colors_from_patch(image):
     cluster2_color = palette[second_largest_cluster_idx]
 
     # --- 区分变色和未变色部分 ---
-    # 使用一个固定的理想参考色进行环境光校正
-    # 将理想参考色转换为HSV进行比较
-    reference_bgr = np.array([105.971, 184.178, 214.027], dtype=np.float32)
-    reference_hsv = cv2.cvtColor(
-        np.array([[reference_bgr]], dtype=np.float32) / 255.0, cv2.COLOR_BGR2HSV
-    )[0][0]
-    reference_hsv[0] *= 2  # Hue从[0,180]转换到[0,360]
+    # 使用预计算的参考HSV
+    reference_hsv = _REFERENCE_HSV
 
     # 将聚类颜色转换为HSV
     cluster1_hsv = cv2.cvtColor(
@@ -90,16 +100,8 @@ def extract_colors_from_patch(image):
     colored_hsv = cv2.cvtColor(colored_bgr, cv2.COLOR_BGR2HSV)[0][0]
     uncolored_hsv = cv2.cvtColor(uncolored_bgr, cv2.COLOR_BGR2HSV)[0][0]
 
-    # 调整Hue到[0,360]范围
-    # colored_hsv[0] *= 2
-    # uncolored_hsv[0] *= 2
-
     # 四舍五入到3位小数
     colored_hsv = tuple(round(float(x), 3) for x in colored_hsv)
     uncolored_hsv = tuple(round(float(x), 3) for x in uncolored_hsv)
-
-    # print(f"识别结果:")
-    # print(f"  变色部分颜色(HSV): {colored_hsv}")
-    # print(f"  未变色部分颜色(HSV): {uncolored_hsv}")
 
     return colored_hsv, uncolored_hsv

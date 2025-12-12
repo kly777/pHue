@@ -52,63 +52,71 @@ def process_frame(frame: np.ndarray, device_id: str) -> Dict[str, Any]:
         }
     }
     """
-    # 使用segment_image函数处理帧
-    from pathlib import Path
-    import tempfile
+    # 调整帧大小以加速推理（最大尺寸640）
+    orig_height, orig_width = frame.shape[:2]
+    max_dim = 640
+    scale = 1.0
+    if orig_width > max_dim or orig_height > max_dim:
+        if orig_width >= orig_height:
+            new_width = max_dim
+            new_height = int(orig_height * max_dim / orig_width)
+        else:
+            new_height = max_dim
+            new_width = int(orig_width * max_dim / orig_height)
+        resized_frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+        scale_x = orig_width / new_width
+        scale_y = orig_height / new_height
+    else:
+        resized_frame = frame
+        scale_x = 1.0
+        scale_y = 1.0
+        new_width, new_height = orig_width, orig_height
 
-    # 创建临时文件来保存帧
-    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_file:
-        temp_path = tmp_file.name
-        cv2.imwrite(temp_path, frame)
-    width, height = 0, 0
+    # 使用segment_image函数处理帧，直接传递numpy数组
+    detected_objects = []
 
-    try:
-        # 处理图像
-        img_path = Path(temp_path)
-        detected_objects = []
+    for obj in segment_image(model, resized_frame, CONF_THRESHOLD):
+        # 提取颜色
+        colored_color, uncolored_color = extract_colors_from_patch(
+            obj["cropped_bgra"]
+        )
 
-        for obj in segment_image(model, img_path, CONF_THRESHOLD):
-            # 提取颜色
-            colored_color, uncolored_color = extract_colors_from_patch(
-                obj["cropped_bgra"]
+        # 计算pH值
+        pH_value = "未知"
+        if colored_color is not None and uncolored_color is not None:
+            corrected_colored_color = correct_color_by_reference(
+                colored_color, uncolored_color
             )
+            pH_value = calculate_ph_value(corrected_colored_color)
 
-            # 计算pH值
-            pH_value = "未知"
-            if colored_color is not None and uncolored_color is not None:
-                corrected_colored_color = correct_color_by_reference(
-                    colored_color, uncolored_color
-                )
-                pH_value = calculate_ph_value(corrected_colored_color)
+        # 获取边界框信息（相对于调整大小后的帧）
+        x1, y1, x2, y2 = obj["box"]
+        # 缩放回原始尺寸
+        x1 = x1 * scale_x
+        y1 = y1 * scale_y
+        x2 = x2 * scale_x
+        y2 = y2 * scale_y
 
-            # 获取边界框信息
-            x1, y1, x2, y2 = obj["box"]
-            width, height = frame.shape[1], frame.shape[0]
+        # 归一化边界框坐标（相对于原始尺寸）
+        x_center = ((x1 + x2) / 2) / orig_width
+        y_center = ((y1 + y2) / 2) / orig_height
+        bbox_width = (x2 - x1) / orig_width
+        bbox_height = (y2 - y1) / orig_height
 
-            # 归一化边界框坐标
-            x_center = ((x1 + x2) / 2) / width
-            y_center = ((y1 + y2) / 2) / height
-            bbox_width = (x2 - x1) / width
-            bbox_height = (y2 - y1) / height
-
-            # 添加到结果中
-            detected_objects.append(
-                {
-                    "label": model.names[int(obj["cls"])]
-                    if int(obj["cls"]) in model.names
-                    else str(int(obj["cls"])),
-                    "confidence": float(obj["conf"]),
-                    "x": float(x_center),
-                    "y": float(y_center),
-                    "width": float(bbox_width),
-                    "height": float(bbox_height),
-                    "ph_value": pH_value,
-                }
-            )
-    finally:
-        # 清理临时文件
-        if Path(temp_path).exists():
-            Path(temp_path).unlink()
+        # 添加到结果中
+        detected_objects.append(
+            {
+                "label": model.names[int(obj["cls"])]
+                if int(obj["cls"]) in model.names
+                else str(int(obj["cls"])),
+                "confidence": float(obj["conf"]),
+                "x": float(x_center),
+                "y": float(y_center),
+                "width": float(bbox_width),
+                "height": float(bbox_height),
+                "ph_value": pH_value,
+            }
+        )
 
     objects = detected_objects
 
@@ -123,11 +131,9 @@ def process_frame(frame: np.ndarray, device_id: str) -> Dict[str, Any]:
         else:
             return obj
 
-    # 确保宽度和高度在使用前已定义
-    if "width" not in locals():
-        width = frame.shape[1] if "frame" in locals() and frame is not None else 640
-    if "height" not in locals():
-        height = frame.shape[0] if "frame" in locals() and frame is not None else 480
+    # 使用原始尺寸
+    width = orig_width
+    height = orig_height
 
     result_dict = {
         "objects": objects,
