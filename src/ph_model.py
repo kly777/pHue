@@ -13,7 +13,7 @@ class pHNetTwoColors(nn.Module):
     输出: 对应的pH值
     """
 
-    def __init__(self, input_size=8, hidden_sizes=[64, 32, 16], output_size=1):
+    def __init__(self, input_size=8, hidden_sizes=[128, 64, 32], output_size=1):
         super(pHNetTwoColors, self).__init__()
         layers = []
         prev_size = input_size
@@ -92,9 +92,9 @@ def train_model_two_colors():
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
 
-    epochs = 10000
+    epochs = 100000
     best_loss = float("inf")
-    patience = 500
+    patience = 5000
     patience_counter = 0
 
     print("开始训练双颜色神经网络模型...")
@@ -138,7 +138,7 @@ def load_model_two_colors(model_path="data/models/best_ph_model_two_colors.pth")
     checkpoint = torch.load(model_path, weights_only=False)
     model = pHNetTwoColors(
         input_size=8,
-        hidden_sizes=[64, 32, 16],
+        hidden_sizes=[128, 64, 32],
         output_size=1,
     )
     model.load_state_dict(checkpoint["model_state_dict"])
