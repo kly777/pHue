@@ -3,12 +3,15 @@ import cv2
 import numpy as np
 import asyncio
 import time
-import json
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from concurrent.futures import ThreadPoolExecutor
 from ultralytics.models import YOLO
 import os
+from segmentation import segment_image
+from color_analysis import extract_colors_from_patch
+from color_correction import correct_color_by_reference
+from ph_measurement import calculate_ph_value
 
 app = FastAPI()
 
@@ -25,14 +28,7 @@ model = YOLO(MODEL_PATH)
 CONF_THRESHOLD = 0.5
 
 
-# 导入新模块
-from segmentation import segment_image
-from color_analysis import extract_colors_from_patch
-from color_correction import correct_color_by_reference
-from ph_measurement import calculate_ph_value
-
-
-def process_frame(frame: np.ndarray, device_id: str) -> dict:
+def process_frame(frame: np.ndarray, device_id: str) -> Dict[str, Any]:
     """
     使用 YOLO 分割模型处理帧，并计算pH值
     返回格式: {
@@ -64,6 +60,7 @@ def process_frame(frame: np.ndarray, device_id: str) -> dict:
     with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_file:
         temp_path = tmp_file.name
         cv2.imwrite(temp_path, frame)
+    width, height = 0, 0
 
     try:
         # 处理图像
@@ -115,7 +112,24 @@ def process_frame(frame: np.ndarray, device_id: str) -> dict:
 
     objects = detected_objects
 
-    return {
+    # 确保所有数值类型可JSON序列化
+    def convert_types(obj):
+        if type(obj).__module__ == "numpy":
+            return float(obj)
+        elif isinstance(obj, dict):
+            return {k: convert_types(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [convert_types(item) for item in obj]
+        else:
+            return obj
+
+    # 确保宽度和高度在使用前已定义
+    if "width" not in locals():
+        width = frame.shape[1] if "frame" in locals() and frame is not None else 640
+    if "height" not in locals():
+        height = frame.shape[0] if "frame" in locals() and frame is not None else 480
+
+    result_dict = {
         "objects": objects,
         "metadata": {
             "device_id": device_id,
@@ -124,6 +138,23 @@ def process_frame(frame: np.ndarray, device_id: str) -> dict:
             "model": "YOLO11n-seg",
         },
     }
+
+    converted_result = convert_types(result_dict)
+
+    # 确保返回值是字典类型
+    if isinstance(converted_result, dict):
+        return converted_result
+    else:
+        # 如果转换后不是字典，构建默认结果
+        return {
+            "objects": [],
+            "metadata": {
+                "device_id": device_id,
+                "timestamp": time.time(),
+                "frame_size": [640.0, 480.0],
+                "model": "YOLO11n-seg",
+            },
+        }
 
 
 @app.websocket("/ws/realtime")
@@ -178,14 +209,17 @@ def process_frame_data(
 
         # 3. 构建响应
         server_latency = (time.time() - receive_time) * 1000
+        # 确保所有数值类型可JSON序列化
+        payload = result
+
         return {
             "type": "result",
-            "payload": result,
+            "payload": payload,
             "latency": {
-                "server_processing": round(processing_time, 1),
-                "total": round(server_latency, 1),
+                "server_processing": float(round(processing_time, 1)),
+                "total": float(round(server_latency, 1)),
             },
-            "timestamp": time.time(),
+            "timestamp": float(time.time()),
         }
 
     except Exception as e:
