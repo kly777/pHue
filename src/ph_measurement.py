@@ -2,12 +2,6 @@
 模块4: 利用被还原的变色部分的颜色(HSV), 使用神经网络模型预测pH值。
 """
 
-import torch
-import torch.nn as nn
-import numpy as np
-from src.pHmap import bgr_to_hsv
-from src.ph_model import predict_ph
-
 
 def calculate_ph_value(colored_color, uncolored_color=None, color_space="hsv"):
     """
