@@ -1,14 +1,15 @@
 """
-屏幕pH检测：捕获屏幕区域，使用YOLO分割模型检测pH试纸，并计算pH值。
-支持两种屏幕捕获方式：mss（优先）和pyautogui（备用）。
+屏幕pH检测可视化：捕获屏幕，显示检测框、分割mask和颜色方块。
 """
+
 import cv2
 import numpy as np
 import time
 import argparse
 import sys
 import os
-sys.path.insert(0, '.')
+
+sys.path.insert(0, ".")
 
 from segmentation import segment_image
 from color_analysis import extract_colors_from_patch
@@ -20,6 +21,7 @@ from ultralytics.models import YOLO
 MODEL_PATH = "seg/weights/best12072154.pt"
 CONF_THRESHOLD = 0.5
 
+
 def load_model():
     """加载YOLO分割模型"""
     if not os.path.exists(MODEL_PATH):
@@ -28,20 +30,27 @@ def load_model():
     model = YOLO(MODEL_PATH)
     return model
 
-def process_screen_frame(frame, model, device_id="screen"):
+
+def process_frame_with_visualization(frame, model):
     """
-    处理单帧屏幕图像，返回与server.py相同格式的结果。
+    处理单帧屏幕图像，返回用于可视化的数据。
     参数:
         frame: BGR numpy数组
         model: 加载的YOLO模型
-        device_id: 设备标识符
     返回:
-        dict: 包含objects和metadata的字典
+        tuple: (vis_frame, objects_info)
+        vis_frame: 用于显示的图像（包含边界框、pH值等）
+        objects_info: 列表，每个元素为字典，包含：
+            'box': (x1, y1, x2, y2) 原始坐标
+            'cropped_bgra': 裁剪的BGRA图像 (H, W, 4)
+            'colored_hsv': 变色部分HSV颜色 (tuple)
+            'uncolored_hsv': 未变色部分HSV颜色 (tuple)
+            'ph_value': pH值 (float 或 "未知")
+            'confidence': 置信度
+            'label': 标签
     """
-    # 调整帧大小以加速推理（最大尺寸640）
     orig_height, orig_width = frame.shape[:2]
     max_dim = 640
-    scale = 1.0
     if orig_width > max_dim or orig_height > max_dim:
         if orig_width >= orig_height:
             new_width = max_dim
@@ -49,7 +58,9 @@ def process_screen_frame(frame, model, device_id="screen"):
         else:
             new_height = max_dim
             new_width = int(orig_width * max_dim / orig_height)
-        resized_frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+        resized_frame = cv2.resize(
+            frame, (new_width, new_height), interpolation=cv2.INTER_LINEAR
+        )
         scale_x = orig_width / new_width
         scale_y = orig_height / new_height
     else:
@@ -58,62 +69,190 @@ def process_screen_frame(frame, model, device_id="screen"):
         scale_y = 1.0
         new_width, new_height = orig_width, orig_height
 
-    detected_objects = []
+    objects_info = []
 
     for obj in segment_image(model, resized_frame, CONF_THRESHOLD):
         # 提取颜色
-        colored_color, uncolored_color = extract_colors_from_patch(
-            obj["cropped_bgra"]
-        )
+        colored_hsv, uncolored_hsv = extract_colors_from_patch(obj["cropped_bgra"])
 
         # 计算pH值
-        pH_value = "未知"
-        if colored_color is not None and uncolored_color is not None:
-            corrected_colored_color = correct_color_by_reference(
-                colored_color, uncolored_color
+        ph_value = "未知"
+        if colored_hsv is not None and uncolored_hsv is not None:
+            corrected_colored_hsv = correct_color_by_reference(
+                colored_hsv, uncolored_hsv
             )
-            pH_value = calculate_ph_value(corrected_colored_color)
+            ph_value = calculate_ph_value(corrected_colored_hsv)
 
-        # 获取边界框信息（相对于调整大小后的帧）
+        # 边界框缩放回原始尺寸
         x1, y1, x2, y2 = obj["box"]
-        # 缩放回原始尺寸
-        x1 = x1 * scale_x
-        y1 = y1 * scale_y
-        x2 = x2 * scale_x
-        y2 = y2 * scale_y
+        x1 = int(x1 * scale_x)
+        y1 = int(y1 * scale_y)
+        x2 = int(x2 * scale_x)
+        y2 = int(y2 * scale_y)
 
-        # 归一化边界框坐标（相对于原始尺寸）
-        x_center = ((x1 + x2) / 2) / orig_width
-        y_center = ((y1 + y2) / 2) / orig_height
-        bbox_width = (x2 - x1) / orig_width
-        bbox_height = (y2 - y1) / orig_height
-
-        # 添加到结果中
-        detected_objects.append(
+        objects_info.append(
             {
+                "box": (x1, y1, x2, y2),
+                "cropped_bgra": obj["cropped_bgra"],
+                "colored_hsv": colored_hsv,
+                "uncolored_hsv": uncolored_hsv,
+                "ph_value": ph_value,
+                "confidence": float(obj["conf"]),
                 "label": model.names[int(obj["cls"])]
                 if int(obj["cls"]) in model.names
                 else str(int(obj["cls"])),
-                "confidence": float(obj["conf"]),
-                "x": float(x_center),
-                "y": float(y_center),
-                "width": float(bbox_width),
-                "height": float(bbox_height),
-                "ph_value": pH_value,
             }
         )
 
-    # 构建结果字典
-    result = {
-        "objects": detected_objects,
-        "metadata": {
-            "device_id": device_id,
-            "timestamp": time.time(),
-            "frame_size": [orig_width, orig_height],
-            "model": "YOLO11n-seg",
-        },
-    }
-    return result
+    # 创建可视化帧（原始帧的副本）
+    vis_frame = frame.copy()
+
+    # 绘制每个检测对象
+    for obj in objects_info:
+        x1, y1, x2, y2 = obj["box"]
+        # 绘制边界框
+        cv2.rectangle(vis_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        # 标签文本
+        label_text = f"{obj['label']} {obj['confidence']:.2f} pH:{obj['ph_value']}"
+        cv2.putText(
+            vis_frame,
+            label_text,
+            (x1, y1 - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 255, 0),
+            2,
+        )
+
+    return vis_frame, objects_info
+
+
+def create_visualization_panel(original_frame, objects_info, panel_width=400):
+    """
+    创建右侧可视化面板。
+    参数:
+        original_frame: 原始帧（用于参考尺寸）
+        objects_info: 来自process_frame_with_visualization的对象列表
+        panel_width: 右侧面板宽度
+    返回:
+        panel: BGR图像，高度与原始帧相同
+    """
+    orig_h, orig_w = original_frame.shape[:2]
+    panel = np.zeros((orig_h, panel_width, 3), dtype=np.uint8)
+    panel.fill(240)  # 浅灰色背景
+
+    if not objects_info:
+        # 无检测对象时显示提示
+        cv2.putText(
+            panel,
+            "No pH strip detected",
+            (50, orig_h // 2),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (100, 100, 100),
+            2,
+        )
+        return panel
+
+    # 只显示第一个检测对象（假设只有一个）
+    obj = objects_info[0]
+
+    # 上半部分：分割出的mask（裁剪后的BGRA转换为BGR）
+    cropped_bgra = obj["cropped_bgra"]
+    # 将BGRA转换为BGR，并将alpha为0的像素设为黑色
+    cropped_bgr = cropped_bgra[:, :, :3].copy()
+    cropped_bgr[cropped_bgra[:, :, 3] == 0] = [0, 0, 0]
+    # 调整大小以适应面板上半部分
+    mask_height = orig_h // 2
+    # 保持宽高比
+    h, w = cropped_bgr.shape[:2]
+    aspect = w / h
+    new_w = int(mask_height * aspect)
+    if new_w > panel_width:
+        new_w = panel_width
+        mask_height = int(new_w / aspect)
+    resized_mask = cv2.resize(cropped_bgr, (new_w, mask_height))
+    # 将mask放置在面板上半部分居中
+    x_offset = (panel_width - new_w) // 2
+    panel[0:mask_height, x_offset : x_offset + new_w] = resized_mask
+    cv2.putText(
+        panel, "Segmented Mask", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 1
+    )
+
+    # 下半部分：颜色方块
+    square_size = 80
+    margin = 20
+    y_start = mask_height + margin
+    # 变色部分颜色方块
+    if obj["colored_hsv"] is not None:
+        # 将HSV转换为BGR用于显示
+        colored_hsv = obj["colored_hsv"]
+        # 注意：colored_hsv是(H, S, V)格式，H在[0,360]，S,V在[0,1]
+        # 转换为OpenCV HSV格式：H/2, S*255, V*255
+        hsv_cv = np.array(
+            [[[colored_hsv[0] / 2, colored_hsv[1] * 255, colored_hsv[2] * 255]]],
+            dtype=np.uint8,
+        )
+        colored_bgr = cv2.cvtColor(hsv_cv, cv2.COLOR_HSV2BGR)[0][0]
+        colored_bgr = tuple(map(int, colored_bgr))
+        cv2.rectangle(
+            panel,
+            (margin, y_start),
+            (margin + square_size, y_start + square_size),
+            colored_bgr,
+            -1,
+        )
+        cv2.putText(
+            panel,
+            "Colored",
+            (margin, y_start + square_size + 20),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 0, 0),
+            1,
+        )
+
+    # 未变色部分颜色方块
+    if obj["uncolored_hsv"] is not None:
+        uncolored_hsv = obj["uncolored_hsv"]
+        hsv_cv = np.array(
+            [[[uncolored_hsv[0] / 2, uncolored_hsv[1] * 255, uncolored_hsv[2] * 255]]],
+            dtype=np.uint8,
+        )
+        uncolored_bgr = cv2.cvtColor(hsv_cv, cv2.COLOR_HSV2BGR)[0][0]
+        uncolored_bgr = tuple(map(int, uncolored_bgr))
+        x_start = margin + square_size + margin
+        cv2.rectangle(
+            panel,
+            (x_start, y_start),
+            (x_start + square_size, y_start + square_size),
+            uncolored_bgr,
+            -1,
+        )
+        cv2.putText(
+            panel,
+            "Uncolored",
+            (x_start, y_start + square_size + 20),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 0, 0),
+            1,
+        )
+
+    # 显示pH值
+    ph_text = f"pH: {obj['ph_value']}"
+    cv2.putText(
+        panel,
+        ph_text,
+        (panel_width - 150, y_start + square_size + 40),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (0, 0, 255),
+        2,
+    )
+
+    return panel
+
 
 def get_screen_capturer(region):
     """
@@ -121,6 +260,7 @@ def get_screen_capturer(region):
     使用pyautogui进行屏幕捕获。
     """
     import pyautogui
+
     # 解析区域
     if region == "full":
         screen_width, screen_height = pyautogui.size()
@@ -129,16 +269,26 @@ def get_screen_capturer(region):
         x, y, w, h = map(int, region.split(","))
         monitor = {"left": x, "top": y, "width": w, "height": h}
     print(f"使用pyautogui捕获区域: {monitor}")
+
     def capture():
         # pyautogui.screenshot 返回 PIL Image
-        screenshot = pyautogui.screenshot(region=(monitor["left"], monitor["top"], monitor["width"], monitor["height"]))
+        screenshot = pyautogui.screenshot(
+            region=(
+                monitor["left"],
+                monitor["top"],
+                monitor["width"],
+                monitor["height"],
+            )
+        )
         frame = np.array(screenshot)
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         return frame
+
     return capture, monitor
 
+
 def main():
-    parser = argparse.ArgumentParser(description="屏幕pH检测")
+    parser = argparse.ArgumentParser(description="屏幕pH检测可视化")
     parser.add_argument(
         "--region",
         type=str,
@@ -148,14 +298,13 @@ def main():
     parser.add_argument(
         "--interval",
         type=float,
-        default=2.0,
-        help="捕获间隔（秒），默认2秒",
+        default=0.5,
+        help="捕获间隔（秒），默认0.5秒（实时）",
     )
     parser.add_argument(
-        "--output",
-        type=str,
-        default=None,
-        help="保存结果到JSON文件（可选）",
+        "--no-vis",
+        action="store_true",
+        help="禁用可视化窗口，仅控制台输出",
     )
     args = parser.parse_args()
 
@@ -165,7 +314,7 @@ def main():
     # 获取捕获函数和区域信息
     capture_func, monitor = get_screen_capturer(args.region)
 
-    print(f"开始屏幕pH检测，每 {args.interval} 秒处理一帧。按 Ctrl+C 停止。")
+    print(f"开始屏幕pH检测可视化，每 {args.interval} 秒处理一帧。按 'q' 退出。")
     try:
         while True:
             # 捕获屏幕
@@ -173,33 +322,42 @@ def main():
 
             # 处理帧
             start_time = time.perf_counter()
-            result = process_screen_frame(frame, model, device_id="screen")
+            vis_frame, objects_info = process_frame_with_visualization(frame, model)
             processing_time = time.perf_counter() - start_time
 
-            # 打印结果
-            print(f"\n=== 处理完成，耗时 {processing_time*1000:.1f} ms ===")
-            print(f"帧尺寸: {result['metadata']['frame_size']}")
-            objects = result["objects"]
-            if objects:
-                for idx, obj in enumerate(objects):
-                    print(f"对象 {idx}: 标签={obj['label']}, 置信度={obj['confidence']:.3f}, pH={obj['ph_value']}")
+            # 控制台输出
+            print(f"\n处理耗时: {processing_time * 1000:.1f} ms")
+            if objects_info:
+                for idx, obj in enumerate(objects_info):
+                    print(
+                        f"对象 {idx}: 标签={obj['label']}, 置信度={obj['confidence']:.3f}, pH={obj['ph_value']}"
+                    )
             else:
                 print("未检测到pH试纸")
 
-            # 如果需要，保存结果到JSON文件
-            if args.output:
-                import json
-                with open(args.output, 'a') as f:
-                    json.dump(result, f, indent=2)
-                    f.write("\n")
-
-            # 等待间隔
-            time.sleep(args.interval)
+            if not args.no_vis:
+                # 创建右侧面板
+                panel = create_visualization_panel(frame, objects_info, panel_width=400)
+                # 合并左右图像
+                combined = np.hstack([vis_frame, panel])
+                # 显示
+                cv2.imshow("pH Strip Detection", combined)
+                # 等待按键
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord("q"):
+                    break
+            else:
+                # 无可视化时，等待间隔
+                time.sleep(args.interval)
 
     except KeyboardInterrupt:
         print("\n检测停止。")
     except Exception as e:
         print(f"发生错误: {e}")
+    finally:
+        if not args.no_vis:
+            cv2.destroyAllWindows()
+
 
 if __name__ == "__main__":
     main()
