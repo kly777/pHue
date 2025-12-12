@@ -1,13 +1,16 @@
 # realtime.py
+import sys
 import cv2
 import numpy as np
 import asyncio
 import time
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from typing import Dict, List, Optional, Any
+from typing import Dict, Optional, Any
 from concurrent.futures import ThreadPoolExecutor
 from ultralytics.models import YOLO
 import os
+
+sys.path.insert(0, ".")
 from src.segmentation import segment_image
 from src.color_analysis import extract_colors_from_patch
 from src.ph_measurement import calculate_ph_value
@@ -62,7 +65,9 @@ def process_frame(frame: np.ndarray, device_id: str) -> Dict[str, Any]:
         else:
             new_height = max_dim
             new_width = int(orig_width * max_dim / orig_height)
-        resized_frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+        resized_frame = cv2.resize(
+            frame, (new_width, new_height), interpolation=cv2.INTER_LINEAR
+        )
         scale_x = orig_width / new_width
         scale_y = orig_height / new_height
     else:
@@ -76,14 +81,14 @@ def process_frame(frame: np.ndarray, device_id: str) -> Dict[str, Any]:
 
     for obj in segment_image(model, resized_frame, CONF_THRESHOLD):
         # 提取颜色
-        colored_color, uncolored_color = extract_colors_from_patch(
-            obj["cropped_bgra"]
-        )
+        colored_color, uncolored_color = extract_colors_from_patch(obj["cropped_bgra"])
 
         # 计算pH值
         pH_value = "未知"
         if colored_color is not None and uncolored_color is not None:
-            pH_value = calculate_ph_value(colored_color, uncolored_color, color_space="hsv")
+            pH_value = calculate_ph_value(
+                colored_color, uncolored_color, color_space="hsv"
+            )
 
         # 获取边界框信息（相对于调整大小后的帧）
         x1, y1, x2, y2 = obj["box"]
