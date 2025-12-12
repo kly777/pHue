@@ -199,9 +199,6 @@ pHue2/
 │   └── test_integration.py  # 集成测试
 ├── data/                    # 数据与模型
 │   └── models/              # 训练好的模型权重
-├── unused/                  # 未使用的旧模块
-│   ├── color_correction.py  # 旧的颜色校正（已合并）
-│   └── visualize_pH_map.py  # 旧的可视化（已弃用）
 ├── seg/                     # YOLO分割相关
 │   ├── weights/             # 分割模型权重
 │   ├── configs/             # 训练配置文件
@@ -212,8 +209,6 @@ pHue2/
 ├── uv.lock                  # 依赖锁文件
 └── README.md                # 本文档
 ```
-
-**注意**：`unused/` 目录下的文件已不再使用，保留供参考。
 
 ## 7. 许可证
 
