@@ -11,9 +11,9 @@ import os
 
 sys.path.insert(0, ".")
 
-from segmentation import segment_image
-from color_analysis import extract_colors_from_patch
-from ph_measurement import calculate_ph_value
+from src.segmentation import segment_image
+from src.color_analysis import extract_colors_from_patch
+from src.ph_measurement import calculate_ph_value
 from ultralytics.models import YOLO
 
 # 加载模型（与server.py相同）

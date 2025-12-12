@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-from pHmap import pH_color_map
+from src.pHmap import pH_color_map
 
 
 class pHNet(nn.Module):
@@ -128,7 +128,7 @@ def train_model():
                         "output_size": 1,
                     },
                 },
-                "best_ph_model.pth",
+                "data/models/best_ph_model.pth",
             )
         else:
             patience_counter += 1
@@ -140,7 +140,7 @@ def train_model():
     return model, stats
 
 
-def load_model(model_path="best_ph_model.pth"):
+def load_model(model_path="data/models/best_ph_model.pth"):
     """加载训练好的模型"""
     # 由于PyTorch 2.6+默认启用weights_only=True，需要设置为False来兼容旧的保存格式
     checkpoint = torch.load(model_path, weights_only=False)
@@ -312,7 +312,7 @@ def train_model_two_colors():
                     "stats": stats,
                     "config": {"input_size": 8, "hidden_sizes": [64, 32, 16], "output_size": 1},
                 },
-                "best_ph_model_two_colors.pth",
+                "data/models/best_ph_model_two_colors.pth",
             )
         else:
             patience_counter += 1
@@ -324,7 +324,7 @@ def train_model_two_colors():
     return model, stats
 
 
-def load_model_two_colors(model_path="best_ph_model_two_colors.pth"):
+def load_model_two_colors(model_path="data/models/best_ph_model_two_colors.pth"):
     """加载训练好的双颜色模型"""
     checkpoint = torch.load(model_path, weights_only=False)
     model = pHNetTwoColors(

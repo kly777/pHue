@@ -8,9 +8,9 @@ from typing import Dict, List, Optional, Any
 from concurrent.futures import ThreadPoolExecutor
 from ultralytics.models import YOLO
 import os
-from segmentation import segment_image
-from color_analysis import extract_colors_from_patch
-from ph_measurement import calculate_ph_value
+from src.segmentation import segment_image
+from src.color_analysis import extract_colors_from_patch
+from src.ph_measurement import calculate_ph_value
 
 app = FastAPI()
 

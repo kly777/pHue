@@ -182,17 +182,38 @@ uv add fastapi[standard]
 ## 6. 项目结构
 
 ```
-pHue/
-├── main.py              # 批量分割脚本
-├── server.py            # 实时 WebSocket 服务
-├── seg/
-│   ├── weights/         # 训练好的模型权重
-│   ├── configs/         # 训练配置文件
-│   ├── train.py         # 训练脚本
-│   └── predict.py       # 单张图像预测示例
-├── out/                 # 批量分割输出目录（自动创建）
-└── README.md            # 本文档
+pHue2/
+├── src/                     # 核心模块
+│   ├── segmentation.py      # 图像分割与腐蚀
+│   ├── color_analysis.py    # 颜色分析
+│   ├── ph_model.py          # 双颜色神经网络模型
+│   ├── ph_measurement.py    # pH值计算
+│   └── pHmap.py             # pH-颜色映射数据
+├── apps/                    # 应用脚本
+│   ├── main.py              # 批量分割脚本
+│   ├── server.py            # 实时 WebSocket 服务
+│   └── screen_ph_detection.py # 屏幕pH检测
+├── train/                   # 训练脚本
+│   └── train_two_colors.py  # 双颜色模型训练
+├── tests/                   # 测试脚本
+│   └── test_integration.py  # 集成测试
+├── data/                    # 数据与模型
+│   └── models/              # 训练好的模型权重
+├── unused/                  # 未使用的旧模块
+│   ├── color_correction.py  # 旧的颜色校正（已合并）
+│   └── visualize_pH_map.py  # 旧的可视化（已弃用）
+├── seg/                     # YOLO分割相关
+│   ├── weights/             # 分割模型权重
+│   ├── configs/             # 训练配置文件
+│   ├── train.py             # 分割训练脚本
+│   └── predict.py           # 分割预测示例
+├── out/                     # 批量分割输出目录（自动创建）
+├── pyproject.toml           # 项目依赖
+├── uv.lock                  # 依赖锁文件
+└── README.md                # 本文档
 ```
+
+**注意**：`unused/` 目录下的文件已不再使用，保留供参考。
 
 ## 7. 许可证
 

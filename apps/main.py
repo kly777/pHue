@@ -5,12 +5,14 @@
 """
 
 import argparse
+from calendar import c
 from pathlib import Path
+import sys
 
-# 导入新模块
-from segmentation import load_model, segment_image
-from color_analysis import extract_colors_from_patch
-from ph_measurement import calculate_ph_value
+sys.path.insert(0, ".")
+from src.segmentation import load_model, segment_image
+from src.color_analysis import extract_colors_from_patch
+from src.ph_measurement import calculate_ph_value
 
 
 def ensure_dir(path):
@@ -51,7 +53,9 @@ def main():
                 obj["cropped_bgra"]
             )
             if colored_color is not None and uncolored_color is not None:
-                pH_value = calculate_ph_value(colored_color, uncolored_color, color_space="hsv")
+                pH_value = calculate_ph_value(
+                    colored_color, uncolored_color, color_space="hsv"
+                )
             else:
                 pH_value = "未知"
 
@@ -71,19 +75,22 @@ def main():
                 colored_color, uncolored_color = extract_colors_from_patch(
                     obj["cropped_bgra"]
                 )
-                corrected_colored_color = (0.0, 0.0, 0.0)
+
                 if colored_color is not None and uncolored_color is not None:
-                    pH_value = calculate_ph_value(colored_color, uncolored_color, color_space="hsv")
+                    pH_value = calculate_ph_value(
+                        colored_color, uncolored_color, color_space="hsv"
+                    )
                 else:
                     pH_value = "未知"
 
                 print(
-                    f"对象 {obj['stem']}: 类别 {int(obj['cls'])}, 置信度 {obj['conf']:.2f}, pH 值: {pH_value}"
+                    f"./seg/data/images/train/{obj['stem']}.jpg : 置信度 {obj['conf']:.2f}, pH 值: {pH_value:.2f}"
                 )
                 # if "." in obj["stem"]:
-                #     print(
-                #         f"({corrected_colored_color[0]}, {corrected_colored_color[1]}, {corrected_colored_color[2]}) :{obj['stem']},"
-                #     )
+                #     if colored_color is not None and uncolored_color is not None:
+                #         print(
+                #             f"({colored_color[0]}, {colored_color[1]}, {colored_color[2]},{uncolored_color[0]},{uncolored_color[1]},{uncolored_color[2]}) :{obj['stem']},"
+                #         )
     else:
         print(f"输入路径不存在: {args.input}")
         return

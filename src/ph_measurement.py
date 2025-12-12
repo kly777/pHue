@@ -5,8 +5,8 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from pHmap import bgr_to_hsv
-from ph_model import predict_ph
+from src.pHmap import bgr_to_hsv
+from src.ph_model import predict_ph
 
 
 def calculate_ph_value(colored_color, uncolored_color=None, color_space="hsv"):
@@ -23,15 +23,17 @@ def calculate_ph_value(colored_color, uncolored_color=None, color_space="hsv"):
     Returns:
         float: 预测的pH值
     """
-    from ph_model import predict_ph_two_colors
-    from pHmap import UNCOLORED_HSV
-    
+    from src.ph_model import predict_ph_two_colors
+    from src.pHmap import UNCOLORED_HSV
+
     if uncolored_color is None:
         uncolored_color = UNCOLORED_HSV
         # 如果未变色颜色是HSV格式，而colored_color可能是BGR，需要统一颜色空间
         # 这里假设uncolored_color已经是HSV，colored_color根据color_space参数转换
         # predict_ph_two_colors 会处理转换
-    
+
     # 使用双颜色模型预测
-    predicted_ph = predict_ph_two_colors(colored_color, uncolored_color, color_space=color_space)
+    predicted_ph = predict_ph_two_colors(
+        colored_color, uncolored_color, color_space=color_space
+    )
     return predicted_ph

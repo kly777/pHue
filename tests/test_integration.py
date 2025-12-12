@@ -2,9 +2,10 @@ import cv2
 import numpy as np
 import sys
 sys.path.insert(0, '.')
-from segmentation import load_model, segment_image
-from color_analysis import extract_colors_from_patch
-from ph_measurement import calculate_ph_value
+sys.path.insert(0, 'src')
+from src.segmentation import load_model, segment_image
+from src.color_analysis import extract_colors_from_patch
+from src.ph_measurement import calculate_ph_value
 
 model = load_model("seg/weights/best12072154.pt")
 img = cv2.imread("seg/OIP-2867035697.jpg")
