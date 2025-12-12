@@ -13,7 +13,6 @@ sys.path.insert(0, ".")
 
 from segmentation import segment_image
 from color_analysis import extract_colors_from_patch
-from color_correction import correct_color_by_reference
 from ph_measurement import calculate_ph_value
 from ultralytics.models import YOLO
 
@@ -78,10 +77,7 @@ def process_frame_with_visualization(frame, model):
         # 计算pH值
         ph_value = "未知"
         if colored_hsv is not None and uncolored_hsv is not None:
-            corrected_colored_hsv = correct_color_by_reference(
-                colored_hsv, uncolored_hsv
-            )
-            ph_value = calculate_ph_value(corrected_colored_hsv)
+            ph_value = calculate_ph_value(colored_hsv, uncolored_hsv, color_space="hsv")
 
         # 边界框缩放回原始尺寸
         x1, y1, x2, y2 = obj["box"]

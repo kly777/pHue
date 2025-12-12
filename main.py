@@ -10,7 +10,6 @@ from pathlib import Path
 # 导入新模块
 from segmentation import load_model, segment_image
 from color_analysis import extract_colors_from_patch
-from color_correction import correct_color_by_reference
 from ph_measurement import calculate_ph_value
 
 
@@ -52,10 +51,7 @@ def main():
                 obj["cropped_bgra"]
             )
             if colored_color is not None and uncolored_color is not None:
-                corrected_colored_color = correct_color_by_reference(
-                    colored_color, uncolored_color
-                )
-                pH_value = calculate_ph_value(corrected_colored_color)
+                pH_value = calculate_ph_value(colored_color, uncolored_color, color_space="hsv")
             else:
                 pH_value = "未知"
 
@@ -77,10 +73,7 @@ def main():
                 )
                 corrected_colored_color = (0.0, 0.0, 0.0)
                 if colored_color is not None and uncolored_color is not None:
-                    corrected_colored_color = correct_color_by_reference(
-                        colored_color, uncolored_color
-                    )
-                    pH_value = calculate_ph_value(corrected_colored_color)
+                    pH_value = calculate_ph_value(colored_color, uncolored_color, color_space="hsv")
                 else:
                     pH_value = "未知"
 

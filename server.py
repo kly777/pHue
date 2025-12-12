@@ -10,7 +10,6 @@ from ultralytics.models import YOLO
 import os
 from segmentation import segment_image
 from color_analysis import extract_colors_from_patch
-from color_correction import correct_color_by_reference
 from ph_measurement import calculate_ph_value
 
 app = FastAPI()
@@ -84,10 +83,7 @@ def process_frame(frame: np.ndarray, device_id: str) -> Dict[str, Any]:
         # 计算pH值
         pH_value = "未知"
         if colored_color is not None and uncolored_color is not None:
-            corrected_colored_color = correct_color_by_reference(
-                colored_color, uncolored_color
-            )
-            pH_value = calculate_ph_value(corrected_colored_color)
+            pH_value = calculate_ph_value(colored_color, uncolored_color, color_space="hsv")
 
         # 获取边界框信息（相对于调整大小后的帧）
         x1, y1, x2, y2 = obj["box"]

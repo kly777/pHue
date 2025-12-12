@@ -86,7 +86,7 @@ def segment_image(model, image_input, conf_threshold=0.5):
             cropped_bgra[:, :, :3] = cropped_img  # 复制裁剪后的BGR图像
             cropped_bgra[:, :, 3] = (cropped_mask > 0.5) * 255  # 设置Alpha通道
             # 在segment_image函数中应用（替换原有yield前的代码）
-            cropped_bgra = erode_non_transparent(cropped_bgra, erosion_percent=25)
+            cropped_bgra = erode_non_transparent(cropped_bgra, erosion_percent=20)
 
             yield {
                 "image": img,

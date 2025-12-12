@@ -184,5 +184,17 @@ def bgr_to_hsv(bgr_tuple):
 
 # print("转换完成！以下是可直接替换的代码：")
 # print("=" * 50)
+
+# 双颜色pH映射（变色颜色 + 未变色颜色）
+# 未变色颜色固定为 (42.0, 0.71, 0.82)
+UNCOLORED_HSV = (42.0, 0.71, 0.82)
+
+pH_color_map_two_colors = {}
+for colored_hsv, ph in pH_color_map.items():
+    key = (*colored_hsv, *UNCOLORED_HSV)  # 拼接两个元组
+    pH_color_map_two_colors[key] = ph
+
+# 可选：打印新映射的大小
+# print(f"双颜色映射条目数: {len(pH_color_map_two_colors)}")
 # print(output)
 # print("=" * 50)
