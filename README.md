@@ -16,14 +16,14 @@ uv run python main.py --input <图像路径或目录> [选项]
 
 ### 参数说明
 
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `--model` | 模型权重路径 | `seg/weights/best12072154.pt` |
-| `--input` | 输入图像路径或目录（必需） | 无 |
-| `--output` | 输出目录 | `out` |
-| `--conf` | 置信度阈值 | `0.5` |
-| `--no-annotated` | 不保存带标注的图像 | `False` |
-| `--no-masks` | 不保存掩码和叠加图像 | `False` |
+| 参数             | 说明                       | 默认值                        |
+| ---------------- | -------------------------- | ----------------------------- |
+| `--model`        | 模型权重路径               | `seg/weights/best12072154.pt` |
+| `--input`        | 输入图像路径或目录（必需） | 无                            |
+| `--output`       | 输出目录                   | `out`                         |
+| `--conf`         | 置信度阈值                 | `0.5`                         |
+| `--no-annotated` | 不保存带标注的图像         | `False`                       |
+| `--no-masks`     | 不保存掩码和叠加图像       | `False`                       |
 
 ### 输出文件
 
@@ -66,10 +66,10 @@ uv run python server.py
 - **参数**：
   - `device_id`：客户端唯一标识符（字符串），用于连接管理。
 - **连接流程**：
-  1. 客户端建立 WebSocket 连接。
-  2. 服务端接受连接后，客户端可连续发送图像帧数据（JPEG 二进制流）。
-  3. 服务端对每帧进行处理并返回 JSON 格式的结果。
-  4. 客户端可随时断开连接。
+    1. 客户端建立 WebSocket 连接。
+    2. 服务端接受连接后，客户端可连续发送图像帧数据（JPEG 二进制流）。
+    3. 服务端对每帧进行处理并返回 JSON 格式的结果。
+    4. 客户端可随时断开连接。
 
 #### 2.2 数据格式
 
@@ -129,7 +129,7 @@ uv run python server.py
 - 返回当前活跃连接数及服务状态：
 
 ```json
-{"status": "ok", "active_connections": 2}
+{ "status": "ok", "active_connections": 2 }
 ```
 
 ### 客户端示例（Python）
@@ -154,7 +154,7 @@ asyncio.run(send_frame())
 
 ## 3. 模型训练 (`seg/train.py`)
 
-如需重新训练模型，请参考 `seg/train.py` 脚本。训练配置位于 `seg/configs/data.yaml`。
+如需训练模型，使用 `seg/train.py` 脚本。训练配置位于 `seg/configs/data.yaml`。
 
 ## 4. 环境配置
 
@@ -162,14 +162,6 @@ asyncio.run(send_frame())
 
 ```bash
 uv sync
-```
-
-### 网络代理设置（如遇下载问题）
-
-```bash
-export UV_HTTP_PROXY=http://127.0.0.1:7890
-export UV_HTTPS_PROXY=http://127.0.0.1:7890
-uv add fastapi[standard]
 ```
 
 ## 5. 注意事项
